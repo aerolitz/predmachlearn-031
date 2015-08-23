@@ -1,0 +1,161 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Rafael Alarcon Borghi"
+date: "Saturday, August 22, 2015"
+output: html_document
+---
+  
+## 1 - Overview  
+<br>
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set.  
+Features:  
+* use any of the other variables to predict with;  
+* create a report describing how the model was built;  
+* how cross validation was used;  
+* the expected out of sample error is;  
+* why the choices was made.  
+* use the prediction model to predict 20 different test cases.
+<br>
+  
+## 2 - Background  
+<br>
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively.  
+These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks.  
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.  
+They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+<br>
+  
+## 3 - Data  
+<br>
+The training data for this project are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+  
+The test data are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+  
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+<br>
+  
+## 4 - Load and Preprocess  
+<br>
+Setting up the environment.<br>
+```{r}
+library(caret, quietly=TRUE)
+library(randomForest)
+```
+<br>
+Setting up the files.<br>
+```{r}
+end_treino <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+end_teste <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+## The download process must have been done in an R enviroment
+# download.file(url = end_treino, destfile = 'pml-training.csv')
+# download.file(url = end_teste, destfile = 'pml-testing.csv')
+treino  <- read.csv(file = 'pml-training.csv', na.strings = c('NA','#DIV/0!',''))
+teste  <- read.csv(file = 'pml-testing.csv', na.strings = c('NA','#DIV/0!',''))
+```
+<br>
+Due estimating the out-of-sample error, the full training data (treino) was randomly splited into a smaller training set (treino1) and a validation set (treino2).<br>
+```{r}
+set.seed(1234)
+divTreino <- createDataPartition(y = treino$classe, p = 0.7, list = F)
+treino1 <- treino[divTreino, ]
+treino2 <- treino[-divTreino, ]
+```
+<br>
+Removing variables with nearly zero variance, variables that are almost always 'NA', and variables that don't make intuitive sense for prediction in order to reduce the number of features by.  
+Please note that the decision to remove them was made by analyzing treino1 and perform the identical removals on treino2.<br>
+```{r}
+## Removing variables with nearly zero variance
+pdz <- nearZeroVar(treino1)
+treino1 <- treino1[, -pdz]
+treino2 <- treino2[, -pdz]
+## Removing variables that are almost always NA
+maioriaNA <- sapply(treino1, function(x) mean(is.na(x))) > 0.95
+treino1 <- treino1[, maioriaNA == F]
+treino2 <- treino2[, maioriaNA == F]
+## Removing variables that don't make intuitive sense for prediction (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp), which happen to be the first five variables
+treino1 <- treino1[, -(1:5)]
+treino2 <- treino2[, -(1:5)]
+```
+<br>
+  
+## 5 - Model Building  
+<br>
+In order to reach an acceptable performance, a decision to start with a Random Forest model was made. The model was fit at treino1 and instruct the "train" function to use 3-fold cross-validation to select optimal tuning parameters for this model.<br>
+```{r}
+## Instructing the training set to use 3-fold CV to select optimal tuning parameters
+controle <- trainControl(method = "cv", number = 3, verboseIter = F)
+## Fitting the model on treino1 (OBS.: this step may take long)
+fit <- train(classe ~ ., data = treino1, method = "rf", trControl = controle)
+## Printing the final model to check which tuning parameters were choosen
+fit$finalModel
+```
+<br>
+I see that it decided to use 500 trees and try 27 variables at each split.
+<br>
+  
+## 6 - Model Evaluation and Selection  
+<br>
+I this step, in order to predict the label ("classe") in treino2 and to show the confusion matrix to compare the predicted versus the actual labels, a fitted model was used.
+.<br>
+```{r}
+## Using the model to predict classe in validation set (treino2)
+predicao <- predict(fit, newdata = treino2)
+## Using the confusion matrix to get estimate of out-of-sample error
+confusionMatrix(treino2$classe, predicao)
+```
+<br>
+The accuracy is 99.81%, thus the predicted accuracy for the out-of-sample error is 0.19%.  
+This may be considered an excellent result.  
+And rather than trying additional algorithms, the Random Forests will be used to predict on the test set.
+<br>
+  
+## 7 - Retraining the Selected Model  
+<br>
+Before predicting on the test set, it is important to train the model on the full training set (treino), rather than using a model trained on a reduced training set (treino1), in order to produce the most accurate predictions.  
+Therefore, everything that was made above on treino and teste will be repeted.
+<br>
+```{r}
+## Removing variables with nearly zero variance
+pdz <- nearZeroVar(treino)
+treino <- treino[, -pdz]
+teste <- teste[, -pdz]
+## Removing variables that are almost always NA
+maioriaNA <- sapply(treino, function(x) mean(is.na(x))) > 0.95
+treino <- treino[, maioriaNA == F]
+teste <- teste[, maioriaNA == F]
+## Removing variables that don't make intuitive sense for prediction (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp), which happen to be the first five variables
+treino <- treino[, -(1:5)]
+teste <- teste[, -(1:5)]
+## Refitting the model using full training set (treino)
+controle <- trainControl(method = "cv", number = 3, verboseIter = F)
+## Fitting the model on treino (OBS.: this step may take long)
+fit <- train(classe ~ ., data = treino, method = "rf", trControl = controle)
+```
+  
+## 8 - Making Test Set Predictions  
+<br>
+At the end, the model fit was used at treino to predict the label for the observations in teste.<br>
+```{r}
+## Using the model to predict classe in test set (teste)
+predicao <- predict(fit, newdata = teste)
+## Converting the predicao to character vector
+predicao <- as.character(predicao)
+```
+<br>
+Writing those predictions to individual files.<br>
+```{r}
+## Creating a function to write predictions into files
+pml_write_files <- function(x) {
+    n <- length(x)
+    for(i in 1:n) {
+        filename <- paste0("problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+    }
+}
+## Exporting the prediction files
+pml_write_files(predicao)
+```
